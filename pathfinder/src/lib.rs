@@ -6,10 +6,10 @@ use model::definitions::{EdgeDefinition, GameState};
 use model::util::RegionCache;
 
 #[derive(Clone, Copy)]
-struct DijkstraCacheState<'a> {
-    cost: u32,
-    prev: u32,
-    edge: Option<&'a Edge>
+pub struct DijkstraCacheState<'a> {
+pub     cost: u32,
+pub     prev: u32,
+pub     edge: Option<&'a Edge>
 }
 
 pub struct BucketRingBuffer<T> {
@@ -37,7 +37,7 @@ impl<T: Clone> BucketRingBuffer<T> {
         }
     }
 
-    fn next_bin(&mut self) -> Option<usize> {
+    fn next_bucket(&mut self) -> Option<usize> {
         let len = self.buckets.len();
         for i in 0..len {
             let mut index = self.cursor + i;
@@ -88,7 +88,7 @@ pub fn dijkstra(nav_grid: &NavGrid, start: &Coordinate, end: &Coordinate, game_s
         }
     }
 
-    while let Some(current) = queue.next_bin() {
+    while let Some(current) = queue.next_bucket() {
         while let Some((cost, mut index)) = queue.buckets[current].pop() {
             count += 1;
             if index == end_index {
@@ -136,6 +136,53 @@ pub fn dijkstra(nav_grid: &NavGrid, start: &Coordinate, end: &Coordinate, game_s
     }
 
     (count, cache.mem_usage(), None)
+}
+
+pub unsafe fn dijkstra2(nav_grid: &NavGrid, start: &Coordinate, end: &Coordinate, game_state: &GameState, queue: &mut BucketRingBuffer<(u32, u32)>, cache: &mut Vec<DijkstraCacheState>) -> (usize, usize, Option<Vec<EdgeDefinition>>) {
+    let start_index = start.index();
+    let end_index = end.index();
+    let target_group = nav_grid.vertices[end_index as usize].get_group();
+    //let mut cache = RegionCache::new(DijkstraCacheState { cost: u32::MAX, prev: u32::MAX, edge: None });
+    let mut count = 0;
+    if nav_grid.vertices[start_index as usize].get_group() == target_group {
+        cache.get_unchecked_mut(start_index as usize).cost = 0;
+        queue.push(0, (0, start_index));
+    }
+
+    while let Some(current) = queue.next_bin() {
+        while let Some((cost, mut index)) = queue.buckets[current].pop() {
+            if index == end_index {
+                let mut path = vec![];
+                while index != start_index {
+                    let state = cache.get_unchecked_mut(index as usize);
+                    if let Some(edge) = state.edge {
+                        path.push(edge.definition.clone());
+                    } else {
+                        path.push(EdgeDefinition::Step { position: Coordinate::from_index(index) });
+                    }
+                    index = state.prev;
+                }
+                path.reverse();
+                return (count, 0, Some(path));
+            }
+            let v = &nav_grid.vertices[index as usize];
+            for (flag, dx, dy) in &DIRECTIONS {
+                if (v.flags & flag) != 0 {
+                    let adj_index = index + (WIDTH * *dy as u32) + *dx as u32;
+                    let adj = cache.get_unchecked_mut(adj_index as usize);
+                    if cost + 1 < adj.cost {
+                        adj.cost = cost + 1;
+                        adj.prev = index;
+                        adj.edge = None;
+                        queue.push(1, (adj.cost, adj_index));
+                    }
+                }
+            }
+        }
+        queue.increment();
+    }
+
+    (count, 0, None)
 }
 
 pub fn flood<F>(nav_grid: &NavGrid, start: &Coordinate, mut visit_vertex: F) where F: FnMut(u32) -> bool {

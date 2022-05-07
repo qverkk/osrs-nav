@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 
 use model::{Coordinate, NavGrid};
 use model::definitions::{EdgeDefinition, GameState, RequirementDefinition};
+use pathfinder::{BucketRingBuffer, DijkstraCacheState};
 
 #[derive(Parser)]
 struct Options {
@@ -52,6 +53,28 @@ fn handle_path_request(request: Json<Request>, nav_grid: &State<NavGrid>) -> Res
         let duration = Instant::now() - begin;
         println!("[Path] {} -> {} in {:.2}ms, {}Kb, {} visited", request.start, request.end, duration.as_secs_f64() * 1000f64, mem_usage / 1024, visited);
         Ok(Json(path))
+    }
+}
+
+#[post("/", data = "<request>")]
+fn handle_bench_request(request: Json<Request>, nav_grid: &State<NavGrid>) -> Result<Json<f64>, BadRequest<&str>> {
+    if !request.start.validate() || !request.end.validate() {
+        println!("[Path] {} -> {} invalid coordinates", request.start, request.end);
+        Err(BadRequest(Some("Coordinate out of bounds")))
+    } else {
+        let max_cost = nav_grid.iter_edges().map(|edge| edge.cost).max().unwrap();
+        let mut queue = BucketRingBuffer::new(max_cost); //TODO borrow from pool instead to prevent allocations?
+        let mut cache = vec![DijkstraCacheState { cost: u32::MAX, prev: u32::MAX, edge: None }; 6400*4000];
+        let begin = Instant::now();
+        for _ in 0..100000 {
+            unsafe { pathfinder::dijkstra2(&nav_grid, &request.start, &request.end, &request.game_state, &mut queue, &mut cache); }
+            queue.reset();
+            for x in cache.iter_mut() {
+                *x = DijkstraCacheState { cost: u32::MAX, prev: u32::MAX, edge: None };
+            }
+        }
+        let duration = Instant::now() - begin;
+        Ok(Json(duration.as_secs_f64()))
     }
 }
 
