@@ -145,7 +145,7 @@ pub unsafe fn dijkstra2(nav_grid: &NavGrid, start: &Coordinate, end: &Coordinate
     //let mut cache = RegionCache::new(DijkstraCacheState { cost: u32::MAX, prev: u32::MAX, edge: None });
     let mut count = 0;
     if nav_grid.vertices[start_index as usize].get_group() == target_group {
-        cache.get_unchecked_mut(start_index as usize).cost = 0;
+        cache.get_mut(start_index).cost = 0;
         queue.push(0, (0, start_index));
     }
 
@@ -154,7 +154,7 @@ pub unsafe fn dijkstra2(nav_grid: &NavGrid, start: &Coordinate, end: &Coordinate
             if index == end_index {
                 let mut path = vec![];
                 while index != start_index {
-                    let state = cache.get_unchecked_mut(index as usize);
+                    let state = cache.get_mut(index);
                     if let Some(edge) = state.edge {
                         path.push(edge.definition.clone());
                     } else {
@@ -169,7 +169,7 @@ pub unsafe fn dijkstra2(nav_grid: &NavGrid, start: &Coordinate, end: &Coordinate
             for (flag, dx, dy) in &DIRECTIONS {
                 if (v.flags & flag) != 0 {
                     let adj_index = index + (WIDTH * *dy as u32) + *dx as u32;
-                    let adj = cache.get_unchecked_mut(adj_index as usize);
+                    let adj = cache.get_mut(adj_index);
                     if cost + 1 < adj.cost {
                         adj.cost = cost + 1;
                         adj.prev = index;
@@ -182,7 +182,7 @@ pub unsafe fn dijkstra2(nav_grid: &NavGrid, start: &Coordinate, end: &Coordinate
         queue.increment();
     }
 
-    (count, 0, None)
+    (count, cache.mem_usage(), None)
 }
 
 pub fn flood<F>(nav_grid: &NavGrid, start: &Coordinate, mut visit_vertex: F) where F: FnMut(u32) -> bool {
